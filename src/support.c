@@ -15,6 +15,7 @@
 
 #include "mpsse.h"
 #include "support.h"
+#include <stdlib.h>
 
 /* Write data to the FTDI chip */
 int raw_write(struct mpsse_context *mpsse, unsigned char *buf, int size)
@@ -37,7 +38,7 @@ int raw_read(struct mpsse_context *mpsse, unsigned char *buf, int size)
 {
 	int n = 0, r = 0;
 
-	if(mpsse->mode)
+	if(mpsse->mode && buf != NULL)
 	{
 		while(n < size)
 		{
@@ -48,12 +49,12 @@ int raw_read(struct mpsse_context *mpsse, unsigned char *buf, int size)
 
 		if(mpsse->flush_after_read)
 		{
-			/* 
+			/*
 			 * Make sure the buffers are cleared after a read or subsequent reads may fail.
-			 * 
+			 *
 			 * Is this needed anymore? It slows down repetitive read operations by ~8%.
 			 */
-			ftdi_usb_purge_rx_buffer(&mpsse->ftdi);
+			ftdi_tciflush(&mpsse->ftdi);
 		}
 	}
 
@@ -87,9 +88,14 @@ uint32_t div2freq(uint32_t system_clock, uint16_t div)
 /* Builds a buffer of commands + data blocks */
 unsigned char *build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsigned char *data, int size, int *buf_size)
 {
+	if (size < 0 || data == NULL)
+	{
+		return NULL;
+	}
+
 	unsigned char *buf = NULL;
-       	int i = 0, j = 0, k = 0, dsize = 0, num_blocks = 0, total_size = 0, xfer_size = 0;
- 	uint16_t rsize = 0;
+	int i = 0, j = 0, k = 0, dsize = 0, num_blocks = 0, total_size = 0, xfer_size = 0;
+	uint16_t rsize = 0;
 
 	*buf_size = 0;
 
@@ -110,7 +116,7 @@ unsigned char *build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsi
 	}
 
 	/* The total size of the data will be the data size + the write command */
-        total_size = size + (CMD_SIZE * num_blocks);
+	total_size = size + (CMD_SIZE * num_blocks);
 
 	/* In I2C we have to add 3 additional commands per data block */
 	if(mpsse->mode == I2C)
@@ -118,10 +124,10 @@ unsigned char *build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsi
 		total_size += (CMD_SIZE * 3 * num_blocks);
 	}
 
-        buf = malloc(total_size);
-        if(buf)
-        {
-                memset(buf, 0, total_size);
+	buf = malloc(total_size);
+	if(buf)
+	{
+		memset(buf, 0, total_size);
 
 		for(j=0; j<num_blocks; j++)
 		{
@@ -139,7 +145,7 @@ unsigned char *build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsi
 			{
 				buf[i++] = SET_BITS_LOW;
 				buf[i++] = mpsse->pstart & ~SK;
-				
+
 				/* On receive, we need to ensure that the data out line is set as an input to avoid contention on the bus */
 				if(cmd == mpsse->rx)
 				{
@@ -240,11 +246,11 @@ int gpio_write(struct mpsse_context *mpsse, int pin, int direction)
 		{
 			mpsse->bitbang |= (1 << pin);
 		}
-		else 
+		else
 		{
 			mpsse->bitbang &= ~(1 << pin);
 		}
-		
+
 		if(set_bits_high(mpsse, mpsse->bitbang) == MPSSE_OK)
 		{
                 	retval = raw_write(mpsse, (unsigned char *) &mpsse->bitbang, 1);
@@ -286,8 +292,8 @@ int gpio_write(struct mpsse_context *mpsse, int pin, int direction)
 			{
 				mpsse->gpioh &= ~(1 << pin);
 			}
-	
-			retval = set_bits_high(mpsse, mpsse->gpioh);	
+
+			retval = set_bits_high(mpsse, mpsse->gpioh);
 		}
 	}
 

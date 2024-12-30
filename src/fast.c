@@ -10,13 +10,11 @@
 #include "mpsse.h"
 #include "support.h"
 
-unsigned char fast_rw_buf[SPI_RW_SIZE + CMD_SIZE];
-
 /* Builds a block buffer for the Fast* functions. For internal use only. */
-int fast_build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsigned char *data, int size, int *buf_size)
+static int fast_build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsigned char *data, int size, int *buf_size, unsigned char *fast_rw_buf)
 {
-       	int i = 0;
- 	uint16_t rsize = 0;
+	int i = 0;
+	uint16_t rsize = 0;
 
 	*buf_size = 0;
 
@@ -29,7 +27,7 @@ int fast_build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsigned c
 	fast_rw_buf[i++] = ((rsize >> 8) & 0xFF);
 
 	/* On a write, copy the data to transmit after the command */
-	if((cmd == mpsse->tx || cmd == mpsse->txrx) && (i + size) <= sizeof(fast_rw_buf))
+	if((cmd == mpsse->tx || cmd == mpsse->txrx) && (i + size) <= sizeof(fast_rw_buf) && data != NULL)
 	{
 		memcpy(fast_rw_buf+i, data, size);
 
@@ -53,22 +51,24 @@ int fast_build_block_buffer(struct mpsse_context *mpsse, uint8_t cmd, unsigned c
  */
 int FastWrite(struct mpsse_context *mpsse, char *data, int size)
 {
-	int buf_size = 0, txsize = 0, n = 0;
+	int n = 0;
 
-	if(is_valid_context(mpsse))
+	if(is_valid_context(mpsse) && data != NULL && size <= SPI_RW_SIZE)
 	{
 		if(mpsse->mode)
 		{
 			while(n < size)
 			{
-				txsize = size - n;
+				int txsize = size - n;
 				if(txsize > mpsse->xsize)
 				{
 					txsize = mpsse->xsize;
 				}
-	
-				if(fast_build_block_buffer(mpsse, mpsse->tx, (unsigned char *) (data + n), txsize, &buf_size) == MPSSE_OK)
-				{	
+
+				int buf_size = 0;
+				unsigned char fast_rw_buf[size + CMD_SIZE];
+				if(fast_build_block_buffer(mpsse, mpsse->tx, (unsigned char *)(data + n), txsize, &buf_size, fast_rw_buf) == MPSSE_OK)
+				{
 					if(raw_write(mpsse, fast_rw_buf, buf_size) == MPSSE_OK)
 					{
 						n += txsize;
@@ -92,7 +92,7 @@ int FastWrite(struct mpsse_context *mpsse, char *data, int size)
 			}
 		}
 	}
-		
+
 	return MPSSE_FAIL;
 }
 
@@ -107,21 +107,23 @@ int FastWrite(struct mpsse_context *mpsse, char *data, int size)
  */
 int FastRead(struct mpsse_context *mpsse, char *data, int size)
 {
-	int n = 0, rxsize = 0, data_size = 0;
+	int n = 0;
 
-	if(is_valid_context(mpsse))
+	if(is_valid_context(mpsse) && data != NULL && size <= SPI_RW_SIZE)
 	{
 		if(mpsse->mode)
 		{
 			while(n < size)
 			{
-				rxsize = size - n;
+				int rxsize = size - n;
 				if(rxsize > mpsse->xsize)
 				{
 					rxsize = mpsse->xsize;
 				}
 
-				if(fast_build_block_buffer(mpsse, mpsse->rx, NULL, rxsize, &data_size) == MPSSE_OK)
+				int data_size = 0;
+				unsigned char fast_rw_buf[size + CMD_SIZE];
+				if(fast_build_block_buffer(mpsse, mpsse->rx, NULL, rxsize, &data_size, fast_rw_buf) == MPSSE_OK)
 				{
 					if(raw_write(mpsse, fast_rw_buf, data_size) == MPSSE_OK)
 					{
@@ -146,11 +148,11 @@ int FastRead(struct mpsse_context *mpsse, char *data, int size)
 			}
 		}
 	}
-	
+
 	return MPSSE_FAIL;
 }
 
-/* 
+/*
  * Function to perform fast transfers in MPSSE.
  *
  * @mpsse - libmpsse context pointer.
@@ -162,22 +164,24 @@ int FastRead(struct mpsse_context *mpsse, char *data, int size)
  */
 int FastTransfer(struct mpsse_context *mpsse, char *wdata, char *rdata, int size)
 {
-	int n = 0, data_size = 0, rxsize = 0;
+	int n = 0;
 
-	if(is_valid_context(mpsse))
+	if(is_valid_context(mpsse) && wdata != NULL && rdata != NULL && size <= SPI_RW_SIZE)
 	{
 		if(mpsse->mode >= SPI0 && mpsse->mode <= SPI3)
 		{
 			while(n < size)
 			{
-				rxsize = size - n;
+				int rxsize = size - n;
 				/* When sending and recieving, FTDI chips don't seem to like large data blocks. Limit the size of each block to SPI_TRANSFER_SIZE */
 				if(rxsize > SPI_TRANSFER_SIZE)
 				{
 					rxsize = SPI_TRANSFER_SIZE;
 				}
 
-				if(build_block_buffer(mpsse, mpsse->txrx, (unsigned char *) (wdata + n), rxsize, &data_size) == MPSSE_OK)
+				int data_size = 0;
+				unsigned char fast_rw_buf[size + CMD_SIZE];
+				if(fast_build_block_buffer(mpsse, mpsse->txrx, (unsigned char *) (wdata + n), rxsize, &data_size, fast_rw_buf) == MPSSE_OK)
 				{
 					if(raw_write(mpsse, fast_rw_buf, data_size) == MPSSE_OK)
 					{
@@ -205,5 +209,3 @@ int FastTransfer(struct mpsse_context *mpsse, char *wdata, char *rdata, int size
 
 	return MPSSE_FAIL;
 }
-
-
