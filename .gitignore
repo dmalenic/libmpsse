@@ -5,6 +5,9 @@
 *.lo
 *.la
 *~
+*.log
+
+*.fzz
 
 src/Makefile
 src/config.h
