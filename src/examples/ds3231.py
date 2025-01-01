@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+# DS3231 DataSheet: https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf
 
 from mpsse import *
 from datetime import datetime
